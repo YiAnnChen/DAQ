@@ -1,5 +1,6 @@
 #include "Sensors.h"
 
+
 static int isRxed;
 static uint8_t RxData[8];
 static float flow_rate;
@@ -117,3 +118,9 @@ int DS18B20_ReadTemp(UART_HandleTypeDef* huart) {
   Temperature = Temp >>= 4;
   return Temperature;
 }
+
+
+
+
+
+
