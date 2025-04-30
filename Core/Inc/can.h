@@ -45,7 +45,6 @@ extern uint8_t CAN_RxData[8];
 
 void MX_CAN_Init(void);
 
-
 /* USER CODE BEGIN Prototypes */
 void CAN_SendMsg(uint16_t msgID, uint8_t *data);
 uint8_t bsp_can1_filter_config(void);

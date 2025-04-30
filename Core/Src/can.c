@@ -1,29 +1,29 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    can.c
-  * @brief   This file provides code for the configuration
-  *          of the CAN instances.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    can.c
+ * @brief   This file provides code for the configuration
+ *          of the CAN instances.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "can.h"
 
 /* USER CODE BEGIN 0 */
-uint32_t CAN_ID_DAQEN=0x70;
-uint32_t CAN_ID_DAQData=0x71;
-uint32_t Rx_CANID = 0 ;
+uint32_t CAN_ID_DAQEN = 0x70;
+uint32_t CAN_ID_DAQData = 0x71;
+uint32_t Rx_CANID = 0;
 uint8_t DAQData_to_DataLogger[8];
 uint8_t DAQEN[8];
 uint8_t CAN_RxData[8];
@@ -126,17 +126,17 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
     /* CAN1 interrupt Deinit */
   /* USER CODE BEGIN CAN1:USB_HP_CAN1_TX_IRQn disable */
     /**
-    * Uncomment the line below to disable the "USB_HP_CAN1_TX_IRQn" interrupt
-    * Be aware, disabling shared interrupt may affect other IPs
-    */
+     * Uncomment the line below to disable the "USB_HP_CAN1_TX_IRQn" interrupt
+     * Be aware, disabling shared interrupt may affect other IPs
+     */
     /* HAL_NVIC_DisableIRQ(USB_HP_CAN1_TX_IRQn); */
   /* USER CODE END CAN1:USB_HP_CAN1_TX_IRQn disable */
 
   /* USER CODE BEGIN CAN1:USB_LP_CAN1_RX0_IRQn disable */
     /**
-    * Uncomment the line below to disable the "USB_LP_CAN1_RX0_IRQn" interrupt
-    * Be aware, disabling shared interrupt may affect other IPs
-    */
+     * Uncomment the line below to disable the "USB_LP_CAN1_RX0_IRQn" interrupt
+     * Be aware, disabling shared interrupt may affect other IPs
+     */
     /* HAL_NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn); */
   /* USER CODE END CAN1:USB_LP_CAN1_RX0_IRQn disable */
 
@@ -148,69 +148,56 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 }
 
 /* USER CODE BEGIN 1 */
-void CAN_SendMsg(uint16_t msgID, uint8_t *Data)
-{
-  CAN_TxHeaderTypeDef   TxHeader;
-	TxHeader.StdId = msgID;			//stdID
-	TxHeader.RTR = CAN_RTR_DATA;		
-	TxHeader.IDE = CAN_ID_STD;		//standard mode
-	TxHeader.DLC =8;   				    //data length
-	TxHeader.TransmitGlobalTime = DISABLE;
-	
+void CAN_SendMsg(uint16_t msgID, uint8_t* Data) {
+  CAN_TxHeaderTypeDef TxHeader;
+  TxHeader.StdId = msgID;  // stdID
+  TxHeader.RTR = CAN_RTR_DATA;
+  TxHeader.IDE = CAN_ID_STD;  // standard mode
+  TxHeader.DLC = 8;           // data length
+  TxHeader.TransmitGlobalTime = DISABLE;
 
-	while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan) < 1) {
-	}  //waiting valid mailbox 
-	uint32_t TxMailbox;		
-	
-	if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, Data, &TxMailbox) != HAL_OK)
-    {
-        
-    }
+  while (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) < 1) {
+  }  // waiting valid mailbox
+  uint32_t TxMailbox;
+
+  if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, Data, &TxMailbox) != HAL_OK) {
+  }
 }
 
-uint8_t bsp_can1_filter_config(void)
-{
-    CAN_FilterTypeDef filter = {0};
-    filter.FilterActivation = ENABLE;
-    filter.FilterMode = CAN_FILTERMODE_IDMASK; //mask mode
-    filter.FilterScale = CAN_FILTERSCALE_32BIT;
-    filter.FilterBank = 0;
-    filter.FilterFIFOAssignment = CAN_FILTER_FIFO0; // set FIFO mode
-    filter.FilterIdLow = 0;
-    filter.FilterIdHigh = 0;
-    filter.FilterMaskIdLow = 0;
-    filter.FilterMaskIdHigh = 0;  //All 0 means no messages are filtered and all messages are received.
-    HAL_CAN_ConfigFilter(&hcan, &filter); 
-    
+uint8_t bsp_can1_filter_config(void) {
+  CAN_FilterTypeDef filter = {0};
+  filter.FilterActivation = ENABLE;
+  filter.FilterMode = CAN_FILTERMODE_IDMASK;  // mask mode
+  filter.FilterScale = CAN_FILTERSCALE_32BIT;
+  filter.FilterBank = 0;
+  filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;  // set FIFO mode
+  filter.FilterIdLow = 0;
+  filter.FilterIdHigh = 0;
+  filter.FilterMaskIdLow = 0;
+  filter.FilterMaskIdHigh = 0;  // All 0 means no messages are filtered and all messages are received.
+  HAL_CAN_ConfigFilter(&hcan, &filter);
 }
 
 static CAN_RxHeaderTypeDef RxMessage;
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* hcan) {
+  uint8_t data[8];
+  HAL_StatusTypeDef status;
 
-		uint8_t data[8];
-		HAL_StatusTypeDef status;
-		
-		status = HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxMessage, data);
-		if (HAL_OK == status){
-
-			uint16_t rx_id=RxMessage.StdId;
-      if (rx_id == 0x70)
-      {
-          uint8_t enable_flag = data[0];
-          if (enable_flag == 1) {
-              DAQ_Enable();  //還沒寫
-          } else {
-              DAQ_Disable(); //還沒寫
-          }
+  status = HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxMessage, data);
+  if (HAL_OK == status) {
+    uint16_t rx_id = RxMessage.StdId;
+    if (rx_id == 0x70) {
+      uint8_t enable_flag = data[0];
+      if (enable_flag == 1) {
+        // DAQ_Enable();  //還沒寫
+      } else {
+        // DAQ_Disable(); //還沒寫
       }
-      else if (rx_id == 0x71)
-        {
-            memcpy(CAN_RxData, data, 8);
-            Rx_CANID = rx_id;
-        }
-		}
-	
+    } else if (rx_id == 0x71) {
+      // memcpy(CAN_RxData, data, 8);
+      Rx_CANID = rx_id;
+    }
+  }
 }
 
 /* USER CODE END 1 */
