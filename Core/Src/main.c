@@ -25,12 +25,12 @@
 #include "gpio.h"
 #include "tim.h"
 #include "usart.h"
-#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "SEGGER_RTT.h"
 #include "Sensors.h"
+#include "daq_payload.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,7 +51,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static float *flow_rate;
+static float* flow_rate;
 // static int* isRxed;
 
 /* USER CODE END PV */
@@ -74,7 +74,6 @@ extern uint8_t PUMP_PWM;
  */
 int main(void) {
   /* USER CODE BEGIN 1 */
-  int DS18B20_Temp;
   uint16_t voltage;
   uint16_t result;
   /* USER CODE END 1 */
@@ -86,10 +85,17 @@ int main(void) {
 
   /* USER CODE BEGIN Init */
   SEGGER_RTT_Init();
+  SEGGER_RTT_WriteString(0, "Reached main\r\n");
+
+  SEGGER_RTT_WriteString(0, "HAL_Init OK\r\n");
+
+  SEGGER_RTT_WriteString(0, "Before SystemClock_Config\r\n");
+  SystemClock_Config();
+  SEGGER_RTT_WriteString(0, "After SystemClock_Config\r\n");
   /* USER CODE END Init */
 
   /* Configure the system clock */
-  SystemClock_Config();
+  // SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -104,14 +110,13 @@ int main(void) {
   MX_TIM1_Init();
   MX_CAN_Init();
   MX_TIM2_Init();
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(500);
+  // HAL_Delay(500);
   SEGGER_RTT_printf(0, "start\n");
   flow_rate = fetch_flowrate();
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
   HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_1);
-  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&voltage, 1) != HAL_OK) {
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&voltage, 1) != HAL_OK) {
     SEGGER_RTT_printf(0, "ADC initialization error!\n");
   }
 
@@ -124,20 +129,28 @@ int main(void) {
 
   SetFanDuty(60);   // FAN
   SetPumpDuty(70);  // PUMP
+
+  DS18B20_SampleTemp(&huart1);  // starting first time is to avoid reading null value
+  // DS18B20_SampleTemp(&huart2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
+    SEGGER_RTT_printf(0, "tick=%lu\r\n", HAL_GetTick());
     HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-    DS18B20_SampleTemp(&huart1);               // Convert (Sample) Temperature Now
-    DS18B20_Temp = DS18B20_ReadTemp(&huart1);  // Read The Conversion Result Temperature Value
-    SEGGER_RTT_printf(0, "time: %d, temperature_1: %d\n", HAL_GetTick(), DS18B20_Temp);
-    DAQData_to_DataLogger[0] = DS18B20_Temp;   // PRE_TEMP
-    DS18B20_SampleTemp(&huart2);               // Convert (Sample) Temperature Now
-    DS18B20_Temp = DS18B20_ReadTemp(&huart2);  // Read The Conversion Result Temperature Value
-    SEGGER_RTT_printf(0, "time: %d, temperature_2: %d\n", HAL_GetTick(), DS18B20_Temp);
-    DAQData_to_DataLogger[1] = DS18B20_Temp;  // POST_TEMP
+
+    int t_pre = DS18B20_ReadTemp(&huart1);
+    SEGGER_RTT_printf(0, "time: %d, temperature_1: %d\n", HAL_GetTick(), t_pre);
+    int t_post = DS18B20_ReadTemp(&huart2);
+    SEGGER_RTT_printf(0, "time: %d, temperature_2: %d\n", HAL_GetTick(), t_post);
+
+    DAQData_to_DataLogger[DAQ_PRE_TEMP] = (uint8_t)t_pre;
+    DAQData_to_DataLogger[DAQ_POST_TEMP] = (uint8_t)t_post;
+
+    DS18B20_SampleTemp(&huart1);
+    DS18B20_SampleTemp(&huart2);
+
     result = voltage * 3300 / 4095;
     SEGGER_RTT_printf(0, "voltage = %d\n", result);
 
@@ -145,18 +158,20 @@ int main(void) {
 
     HAL_Delay(500);
 
-    DAQData_to_DataLogger[2] = (result >> 8) & 0xFF;  // PRESSURE(H)
-    DAQData_to_DataLogger[3] = result & 0xFF;         // PRESSURE(L)
+    DAQData_to_DataLogger[DAQ_PRESSURE_H] = (result >> 8) & 0xFF;  // PRESSURE(H)
+    DAQData_to_DataLogger[DAQ_PRESSURE_L] = result & 0xFF;         // PRESSURE(L)
 
-    DAQData_to_DataLogger[4] = ((int)*flow_rate >> 8) & 0xFF;  // FLOW_RATE(H)
-    DAQData_to_DataLogger[5] = (int)*flow_rate & 0xFF;         // FLOW_RATE(L)
-    DAQData_to_DataLogger[6] = FAN_PWM;                        // FAN_PWM
-    DAQData_to_DataLogger[7] = PUMP_PWM;                       // PUMP_PWM
+    DAQData_to_DataLogger[DAQ_FLOW_H] = ((int)*flow_rate >> 8) & 0xFF;  // FLOW_RATE(H)
+    DAQData_to_DataLogger[DAQ_FLOW_L] = (int)*flow_rate & 0xFF;         // FLOW_RATE(L)
+    DAQData_to_DataLogger[DAQ_FAN_PWM] = FAN_PWM;                       // FAN_PWM
+    DAQData_to_DataLogger[DAQ_PUMP_PWM] = PUMP_PWM;                     // PUMP_PWM
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
     if (g_daq_enabled) {
-      CAN_SendMsg(CA_DAQ_DATA, DAQData_to_DataLogger);
+      if (!CAN_SendMsg(CA_DAQ_DATA, DAQData_to_DataLogger)) {
+        SEGGER_RTT_printf(0, "CAN TX timeout or fail\n");
+      }
     }
     HAL_Delay(500);
   }
@@ -175,13 +190,12 @@ void SystemClock_Config(void) {
   /** Initializes the RCC Oscillators according to the specified parameters
    * in the RCC_OscInitTypeDef structure.
    */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
@@ -198,9 +212,8 @@ void SystemClock_Config(void) {
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC | RCC_PERIPHCLK_USB;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
     Error_Handler();
   }
@@ -231,7 +244,7 @@ void Error_Handler(void) {
  * @param  line: assert_param error line source number
  * @retval None
  */
-void assert_failed(uint8_t *file, uint32_t line) {
+void assert_failed(uint8_t* file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
